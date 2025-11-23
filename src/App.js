@@ -16,8 +16,10 @@ function App() {
   const [tabSwitches, setTabSwitches] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
   const [successMessage, setSuccessMessage] = useState('');
+  const [pollingStopped, setPollingStopped] = useState(false);
   const socketRef = useRef(null);
   const timerRef = useRef(null);
+  const pollIntervalRef = useRef(null);
 
   // Initialize student ID from localStorage or prompt
   useEffect(() => {
@@ -73,15 +75,58 @@ function App() {
 
   // Poll for status updates when locked (fallback if WebSocket fails)
   useEffect(() => {
-    if (status === 'Needs Intervention' && studentId) {
-      const pollInterval = setInterval(() => {
-        console.log('Polling for status update...');
-        fetchStudentStatus(studentId);
-      }, 5000); // Poll every 5 seconds
+    if (status === 'Needs Intervention' && studentId && !pollingStopped) {
+      // Check if polling is enabled (default: true, can disable via env var)
+      const pollingEnabled = process.env.REACT_APP_ENABLE_POLLING !== 'false';
+      const maxPollAttempts = parseInt(process.env.REACT_APP_MAX_POLL_ATTEMPTS) || 60; // Default: 60 attempts = 5 minutes
+      const pollIntervalMs = parseInt(process.env.REACT_APP_POLL_INTERVAL) || 5000; // Default: 5 seconds
+      
+      if (!pollingEnabled) {
+        console.log('[Polling] Disabled via REACT_APP_ENABLE_POLLING=false');
+        return;
+      }
 
-      return () => clearInterval(pollInterval);
+      let pollAttempts = 0;
+      
+      pollIntervalRef.current = setInterval(() => {
+        pollAttempts++;
+        console.log(`[Polling] Attempt ${pollAttempts}/${maxPollAttempts}`);
+        
+        // Stop polling after max attempts
+        if (pollAttempts >= maxPollAttempts) {
+          console.warn('[Polling] Reached maximum poll attempts. Stopping polling.');
+          clearInterval(pollIntervalRef.current);
+          setPollingStopped(true);
+          return;
+        }
+        
+        fetchStudentStatus(studentId);
+      }, pollIntervalMs);
+
+      return () => {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          console.log('[Polling] Stopped');
+        }
+      };
     }
-  }, [status, studentId]);
+  }, [status, studentId, pollingStopped]);
+
+  // Reset polling stopped when status changes
+  useEffect(() => {
+    if (status !== 'Needs Intervention') {
+      setPollingStopped(false);
+    }
+  }, [status]);
+
+  const handleStopPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    setPollingStopped(true);
+    console.log('[Polling] Manually stopped by user');
+  };
 
   // Tab visibility detection (Cheater Detection)
   useEffect(() => {
@@ -313,13 +358,43 @@ function App() {
       <div className="lock-icon">🔒</div>
       <h2>Analysis in Progress</h2>
       <p className="status-message">Waiting for Mentor...</p>
-      <div className="loading-spinner"></div>
+      {!pollingStopped && <div className="loading-spinner"></div>}
+      {pollingStopped && (
+        <div style={{ 
+          padding: '15px', 
+          background: '#fff3cd', 
+          borderRadius: '8px', 
+          margin: '20px 0',
+          color: '#856404'
+        }}>
+          <p style={{ margin: 0, fontWeight: 'bold' }}>
+            ⚠️ Status checking paused. Waiting for mentor response.
+          </p>
+        </div>
+      )}
       <p className="info-text">
         Your recent performance has been flagged for review. 
         A mentor will analyze your progress and assign appropriate interventions.
       </p>
+      
+      {/* Stop Polling Button - Available in Production */}
+      {!pollingStopped && (
+        <div style={{ marginTop: '20px' }}>
+          <button 
+            className="btn btn-secondary" 
+            onClick={handleStopPolling}
+            style={{ width: 'auto', margin: '0 auto', display: 'block' }}
+          >
+            Stop Checking Status
+          </button>
+          <p style={{ fontSize: '0.8rem', color: '#666', textAlign: 'center', marginTop: '10px' }}>
+            You can stop automatic status checking. The page will still update when mentor responds.
+          </p>
+        </div>
+      )}
+
       {/* Development/Testing: Manual unlock button */}
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === process.env.NODE_ENV && (
         <div style={{ marginTop: '20px', padding: '15px', background: '#f0f0f0', borderRadius: '8px' }}>
           <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '10px' }}>
             <strong>Development Mode:</strong> For testing, you can manually unlock:

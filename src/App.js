@@ -13,7 +13,6 @@ function App() {
   const [focusMinutes, setFocusMinutes] = useState(0);
   const [quizScore, setQuizScore] = useState('');
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [timerInterval, setTimerInterval] = useState(null);
   const [tabSwitches, setTabSwitches] = useState(0);
   const [isTabVisible, setIsTabVisible] = useState(true);
   const [successMessage, setSuccessMessage] = useState('');
